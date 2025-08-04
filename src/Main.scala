@@ -20,7 +20,7 @@ case class Config(
 
 object TxGenerator {
 
-    def generateTransaction(): Transaction = {
+    private def generateTransaction(): Transaction = {
         val in = Arbitrary.arbitrary[TransactionInput].sample.get
         val out = Arbitrary.arbitrary[TransactionOutput].sample.get
         Transaction(
@@ -33,7 +33,7 @@ object TxGenerator {
         )
     }
 
-    def submitTransaction(httpClient: HttpClient, url: String, tx: Transaction): Unit = {
+    private def submitTransaction(httpClient: HttpClient, url: String, tx: Transaction): Unit = {
         val cborHex = tx.toCbor.toHex
         val submitUrl = s"$url/submit?tx_cbor=$cborHex"
         val request = HttpRequest
@@ -52,11 +52,11 @@ object TxGenerator {
         }
     }
 
-    def runGenerator(config: Config): Unit = {
+    private def runGenerator(config: Config): Unit = {
         println(s"Starting transaction generator...")
         println(s"Target URL: ${config.targetUrl}")
         println(s"Number of transactions: ${
-                if (config.numTransactions == Long.MaxValue) "unlimited"
+                if config.numTransactions == Long.MaxValue then "unlimited"
                 else config.numTransactions.toString
             }")
         println(s"Delay between transactions: ${config.delayMs}ms")
@@ -67,21 +67,13 @@ object TxGenerator {
             .connectTimeout(Duration.ofSeconds(5))
             .build()
 
-        val shouldContinue = (c: Long) => c < config.numTransactions
-
-        while (shouldContinue(count)) {
+        while count < config.numTransactions  do
             val tx = generateTransaction()
             submitTransaction(httpClient, config.targetUrl, tx)
             count += 1
+            if count % 1000 == 0 then println(s"Submitted $count transactions")
+            if config.delayMs > 0 then Thread.sleep(config.delayMs)
 
-            if (count % 1000 == 0) {
-                println(s"Submitted $count transactions")
-            }
-
-            if (config.delayMs > 0) {
-                Thread.sleep(config.delayMs)
-            }
-        }
 
         println(s"Completed. Total transactions submitted: $count")
     }
@@ -115,9 +107,8 @@ object TxGenerator {
     )(configOpt)
 
     def main(args: Array[String]): Unit = {
-        command.parse(args) match {
+        command.parse(args) match
             case Left(help)    => println(help)
             case Right(config) => runGenerator(config)
-        }
     }
 }
