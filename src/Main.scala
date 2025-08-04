@@ -6,7 +6,8 @@ import scalus.cardano.ledger.*
 import scalus.cardano.ledger.ArbitraryInstances.given
 import scalus.utils.Hex
 import scalus.utils.Hex.toHex
-import cats.syntax.all._
+import cats.syntax.all.*
+import scalus.cardano.address.Address
 
 import java.net.URI
 import java.net.http.{HttpClient, HttpRequest, HttpResponse}
@@ -20,9 +21,14 @@ case class Config(
 
 object TxGenerator {
 
+    private  val outGen = for
+        address <- Arbitrary.arbitrary[Address]
+        coin <- Arbitrary.arbitrary[Coin]
+    yield TransactionOutput(address, Value(coin))
+
     private def generateTransaction(): Transaction = {
         val in = Arbitrary.arbitrary[TransactionInput].sample.get
-        val out = Arbitrary.arbitrary[TransactionOutput].sample.get
+        val out = outGen.sample.get
         Transaction(
           body = TransactionBody(
             inputs = Set(in),
