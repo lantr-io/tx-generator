@@ -12,16 +12,18 @@ import scalus.cardano.address.Address
 import java.net.URI
 import java.net.http.{HttpClient, HttpRequest, HttpResponse}
 import java.time.Duration
+import java.util.concurrent.atomic.AtomicLong
 
 case class Config(
     targetUrl: String,
     numTransactions: Long,
-    delayMs: Long
+    delayMs: Long,
+    numThreads: Int
 )
 
 object TxGenerator {
 
-    private  val outGen = for
+    private val outGen = for
         address <- Arbitrary.arbitrary[Address]
         coin <- Arbitrary.arbitrary[Coin]
     yield TransactionOutput(address, Value(coin))
@@ -66,22 +68,28 @@ object TxGenerator {
                 else config.numTransactions.toString
             }")
         println(s"Delay between transactions: ${config.delayMs}ms")
+        println(s"Number of concurrent threads: ${config.numThreads}")
 
-        var count = 0L
         val httpClient = HttpClient
             .newBuilder()
             .connectTimeout(Duration.ofSeconds(5))
             .build()
 
-        while count < config.numTransactions  do
-            val tx = generateTransaction()
-            submitTransaction(httpClient, config.targetUrl, tx)
-            count += 1
-            if count % 1000 == 0 then println(s"Submitted $count transactions")
-            if config.delayMs > 0 then Thread.sleep(config.delayMs)
+        val count = new AtomicLong(0)
+        val threads = (1 to config.numThreads).map { _ =>
+            Thread.ofVirtual().start(() => {
+                while count.get() < config.numTransactions do
+                    if count.incrementAndGet() <= config.numTransactions then
+                        val tx = generateTransaction()
+                        submitTransaction(httpClient, config.targetUrl, tx)
+                        val current = count.get()
+                        if current % 1000 == 0 then println(s"Submitted $current transactions")
+                        if config.delayMs > 0 then Thread.sleep(config.delayMs)
+            })
+        }
 
-
-        println(s"Completed. Total transactions submitted: $count")
+        threads.foreach(_.join())
+        println(s"Completed. Total transactions submitted: ${count.get()}")
     }
 
     private val urlOpt = Opts
@@ -105,7 +113,14 @@ object TxGenerator {
         )
         .withDefault(0L)
 
-    private val configOpt = (urlOpt, numTxsOpt, delayOpt).mapN(Config.apply)
+    private val threadsOpt = Opts
+        .option[Int](
+          "threads",
+          help = "Number of concurrent threads for transaction generation"
+        )
+        .withDefault(10)
+
+    private val configOpt = (urlOpt, numTxsOpt, delayOpt, threadsOpt).mapN(Config.apply)
 
     private val command = Command(
       name = "tx-generator",
