@@ -105,7 +105,7 @@ object TxGenerator {
                     while count.get() < config.numTransactions do
                         if count.incrementAndGet() <= config.numTransactions then
                             val tx = generator.generateTransaction()
-                            println(s"txid: ${tx.id.toHex}, tx: ${tx.body.value.inputs}")
+//                            println(s"txid: ${tx.id.toHex}, tx: ${tx.body.value.inputs}")
                             submitTransaction(httpClient, config.targetUrl, tx)
                             val current = count.get()
                             if current % 1000 == 0 then println(s"Submitted $current transactions")
