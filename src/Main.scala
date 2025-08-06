@@ -1,37 +1,50 @@
 package txgenerator
 
+import cats.syntax.all.*
 import com.monovore.decline.{Command, Opts}
 import org.scalacheck.Arbitrary
+import scalus.cardano.address.Address
 import scalus.cardano.ledger.*
 import scalus.cardano.ledger.ArbitraryInstances.given
 import scalus.utils.Hex
 import scalus.utils.Hex.toHex
-import cats.syntax.all.*
-import scalus.cardano.address.Address
 
 import java.net.URI
 import java.net.http.{HttpClient, HttpRequest, HttpResponse}
 import java.time.Duration
 import java.util.concurrent.atomic.AtomicLong
+import scala.collection.mutable
 
 case class Config(
     targetUrl: String,
     numTransactions: Long,
     delayMs: Long,
-    numThreads: Int
+    numThreads: Int,
+    initialUtxos: Int
 )
 
-object TxGenerator {
+class TxGenerator {
+    private val utxos = mutable.HashMap[TransactionInput, TransactionOutput]()
+
+    def initUtxos(n: Int): Unit = {
+        (1 to n).foreach { _ =>
+            val in = Arbitrary.arbitrary[TransactionInput].sample.get
+            val out = outGen.sample.get
+            utxos.put(in, out)
+        }
+    }
 
     private val outGen = for
         address <- Arbitrary.arbitrary[Address]
         coin <- Arbitrary.arbitrary[Coin]
     yield TransactionOutput(address, Value(coin))
 
-    private def generateTransaction(): Transaction = {
-        val in = Arbitrary.arbitrary[TransactionInput].sample.get
+    def generateTransaction(): Transaction = {
+        val size = utxos.size
+        val idx = scala.util.Random.nextInt(size)
+        val in = utxos.keys.toIndexedSeq(idx)
         val out = outGen.sample.get
-        Transaction(
+        val tx = Transaction(
           body = TransactionBody(
             inputs = Set(in),
             outputs = IndexedSeq(Sized(out)),
@@ -39,7 +52,14 @@ object TxGenerator {
           ),
           witnessSet = TransactionWitnessSet.empty
         )
+        val txin = TransactionInput(tx.id, 0)
+        utxos.remove(in)
+        utxos.put(txin, out)
+        tx
     }
+}
+
+object TxGenerator {
 
     private def submitTransaction(httpClient: HttpClient, url: String, tx: Transaction): Unit = {
         val cborHex = tx.toCbor.toHex
@@ -77,15 +97,20 @@ object TxGenerator {
 
         val count = new AtomicLong(0)
         val threads = (1 to config.numThreads).map { _ =>
-            Thread.ofVirtual().start(() => {
-                while count.get() < config.numTransactions do
-                    if count.incrementAndGet() <= config.numTransactions then
-                        val tx = generateTransaction()
-                        submitTransaction(httpClient, config.targetUrl, tx)
-                        val current = count.get()
-                        if current % 1000 == 0 then println(s"Submitted $current transactions")
-                        if config.delayMs > 0 then Thread.sleep(config.delayMs)
-            })
+            Thread
+                .ofVirtual()
+                .start(() => {
+                    val generator = TxGenerator()
+                    generator.initUtxos(config.initialUtxos)
+                    while count.get() < config.numTransactions do
+                        if count.incrementAndGet() <= config.numTransactions then
+                            val tx = generator.generateTransaction()
+                            println(s"txid: ${tx.id.toHex}, tx: ${tx.body.value.inputs}")
+                            submitTransaction(httpClient, config.targetUrl, tx)
+                            val current = count.get()
+                            if current % 1000 == 0 then println(s"Submitted $current transactions")
+                            if config.delayMs > 0 then Thread.sleep(config.delayMs)
+                })
         }
 
         threads.foreach(_.join())
@@ -120,7 +145,15 @@ object TxGenerator {
         )
         .withDefault(10)
 
-    private val configOpt = (urlOpt, numTxsOpt, delayOpt, threadsOpt).mapN(Config.apply)
+    private val initialUtxosOpt = Opts
+        .option[Int](
+          "utxos",
+          help = "Number of initial UTXOs per thread"
+        )
+        .withDefault(1000)
+
+    private val configOpt =
+        (urlOpt, numTxsOpt, delayOpt, threadsOpt, initialUtxosOpt).mapN(Config.apply)
 
     private val command = Command(
       name = "tx-generator",
