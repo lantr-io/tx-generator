@@ -1,6 +1,5 @@
 //> using scala "3.3.6"
 //> using dep "org.scalus::scalus:0.11.0"
-//> using dep "org.scalus::scalus-cardano-ledger:0.11.0"
 //> using dep "org.scalus::scalus-testkit:0.11.0"
 //> using dep "com.monovore::decline:2.5.0"
 //> using dep "org.slf4j:slf4j-simple:2.0.17"
