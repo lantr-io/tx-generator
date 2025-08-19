@@ -34,16 +34,20 @@
 
           shellHook = ''
             echo "Cardano Transaction Generator Development Environment"
-            echo "Scala version: $(scala-cli version --cli-version)"
+            echo "Scala CLI version: $(scala-cli version --cli-version)"
             echo "Java version: $(java -version 2>&1 | head -n 1)"
             echo "GraalVM version: $(native-image --version 2>&1 | head -n 1)"
             echo ""
-            echo "Available commands:"
-            echo "  scala-cli run .           - Run the transaction generator"
-            echo "  scala-cli compile .       - Compile the project"
-            echo "  scala-cli test .          - Run tests"
-            echo "  scala-cli package .       - Package the application"
-            echo "  scala-cli package . --native-image - Create native binary"
+            echo "Available make commands:"
+            echo "  make build         - Compile the Scala project"
+            echo "  make jar           - Create a fat JAR"
+            echo "  make native        - Create GraalVM native image"
+            echo "  make run           - Run the application"
+            echo "  make test          - Run tests"
+            echo "  make clean         - Clean build artifacts"
+            echo "  make dist          - Create distribution package"
+            echo "  make install-graalvm - Install GraalVM (macOS)"
+            echo "  make help          - Show help message"
           '';
 
           # Set JAVA_HOME for scala-cli
